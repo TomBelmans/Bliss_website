@@ -1,0 +1,285 @@
+// Prisma schema voor Bliss.
+// Na wijzigingen: npx prisma migrate dev --name <omschrijving>
+// (genereert automatisch ook de client, zie prisma.config.ts voor de seed-config)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Geen `url` hier: Prisma 7 verplicht de connectiestring naar
+  // prisma.config.ts (voor de CLI/migraties) en naar een driver-adapter in
+  // de PrismaClient-constructor (voor de app zelf, zie
+  // src/lib/server/dal/prismaClient.ts).
+}
+
+// -----------------------------------------------------------------------------
+// Authenticatie: `User` is uitsluitend de beheerder (dochter), `Customer` is
+// een klant die vrijwillig een account aanmaakt bij het boeken/afrekenen.
+// Bewust twee volledig gescheiden tabellen (i.p.v. één tabel met een
+// rol-kolom): een klant heeft heel andere velden (adres) die voor de
+// beheerder nooit van toepassing zijn, en gescheiden sessies/cookies maken
+// het onderscheid ondubbelzinnig. Sessies worden in de database bijgehouden
+// (i.p.v. bv. JWT) zodat ze server-side onmiddellijk ingetrokken kunnen
+// worden (uitloggen, account deactiveren).
+// -----------------------------------------------------------------------------
+
+model User {
+  id        String    @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String    @unique @db.VarChar(255)
+  password  String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  sessions  Session[]
+}
+
+model Session {
+  id          String   @id @unique @db.VarChar()
+  activeFrom  DateTime @default(now())
+  activeUntil DateTime
+  userId      String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Customer {
+  id          String            @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email       String            @unique @db.VarChar(255)
+  password    String
+  firstName   String            @db.VarChar(255)
+  lastName    String            @db.VarChar(255)
+  phone       String?           @db.VarChar(50)
+  street      String            @db.VarChar(255)
+  houseNumber String            @db.VarChar(20)
+  postalCode  String            @db.VarChar(20)
+  city        String            @db.VarChar(255)
+  country     String            @db.VarChar(100)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  // Soft-delete: rij blijft voor boekhouding/FK's, PII wordt geanonimiseerd (GDPR).
+  deletedAt   DateTime?
+  sessions    CustomerSession[]
+  bookings    Booking[]
+  orders      Order[]
+  history     CustomerHistory[]
+}
+
+/**
+ * SCD2-historiek van klantprofielen: bij elke wijziging wordt de vorige
+ * geldige status hier bewaard. `validTo` is het moment waarop die versie
+ * werd afgesloten; de actuele versie staat op `Customer`.
+ */
+model CustomerHistory {
+  id          String   @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId  String   @db.Uuid
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  email       String   @db.VarChar(255)
+  firstName   String   @db.VarChar(255)
+  lastName    String   @db.VarChar(255)
+  phone       String?  @db.VarChar(50)
+  street      String   @db.VarChar(255)
+  houseNumber String   @db.VarChar(20)
+  postalCode  String   @db.VarChar(20)
+  city        String   @db.VarChar(255)
+  country     String   @db.VarChar(100)
+  validFrom   DateTime
+  validTo     DateTime
+  archivedAt  DateTime @default(now())
+
+  @@index([customerId, validTo])
+}
+
+model CustomerSession {
+  id          String   @id @unique @db.VarChar()
+  activeFrom  DateTime @default(now())
+  activeUntil DateTime
+  customerId  String   @db.Uuid
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------------------------------
+// Diensten (boekbare behandelingen)
+// -----------------------------------------------------------------------------
+
+model Service {
+  id              String                @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String                @db.VarChar(255)
+  description     String?               @db.VarChar(2000)
+  durationMinutes Int
+  priceCents      Int
+  active          Boolean               @default(true)
+  sortOrder       Int                   @default(0)
+  createdAt       DateTime              @default(now())
+  bookings        Booking[]
+  categories      ServiceCategoryLink[]
+}
+
+// -----------------------------------------------------------------------------
+// Categorieën: een dienst of product kan meerdere categorieën hebben
+// (many-to-many via expliciete junction-tabellen), toegekend door de
+// beheerder in het dienst-/productformulier.
+// -----------------------------------------------------------------------------
+
+model ServiceCategory {
+  id        String                @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String                @unique @db.VarChar(255)
+  createdAt DateTime              @default(now())
+  services  ServiceCategoryLink[]
+}
+
+model ServiceCategoryLink {
+  serviceId  String          @db.Uuid
+  categoryId String          @db.Uuid
+  service    Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  category   ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, categoryId])
+}
+
+model ProductCategory {
+  id        String                @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String                @unique @db.VarChar(255)
+  createdAt DateTime              @default(now())
+  products  ProductCategoryLink[]
+}
+
+model ProductCategoryLink {
+  productId  String          @db.Uuid
+  categoryId String          @db.Uuid
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+}
+
+// -----------------------------------------------------------------------------
+// Webshop
+// -----------------------------------------------------------------------------
+
+// Merk (bv. "Lancôme") en inhoudseenheid (bv. "ml"): in tegenstelling tot
+// categorieën heeft een product hiervan hoogstens één, dus een gewone
+// nullable FK op Product i.p.v. een junction-tabel.
+
+model Brand {
+  id        String    @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String    @unique @db.VarChar(255)
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model ContentUnit {
+  id        String    @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String    @unique @db.VarChar(50)
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id            String                @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String                @db.VarChar(255)
+  description   String?               @db.VarChar(2000)
+  priceCents    Int
+  currency      String                @default("eur") @db.VarChar(3)
+  stockQuantity Int                   @default(0)
+  // Moment waarop voorraad op 0 kwam; null zolang er voorraad is.
+  outOfStockAt  DateTime?
+  // Numerieke hoeveelheid (bv. 50), samen met contentUnit (bv. "ml") → "50 ml".
+  volume        Float?
+  brandId       String?               @db.Uuid
+  brand         Brand?                @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  contentUnitId String?               @db.Uuid
+  contentUnit   ContentUnit?          @relation(fields: [contentUnitId], references: [id], onDelete: SetNull)
+  // Foto rechtstreeks in de database (geen aparte storage-service nodig,
+  // blijft binnen de gratis Postgres-tier voor een klein productaanbod).
+  image         Bytes?                @db.ByteA
+  imageMimeType String?               @db.VarChar(100)
+  active        Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  orderItems    OrderItem[]
+  categories    ProductCategoryLink[]
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id                       String      @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerName             String      @db.VarChar(255)
+  customerEmail            String      @db.VarChar(255)
+  // Null = gastbestelling (geen account aangemaakt/ingelogd bij het afrekenen).
+  customerId               String?     @db.Uuid
+  customer                 Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status                   OrderStatus @default(PENDING)
+  totalCents               Int
+  currency                 String      @default("eur") @db.VarChar(3)
+  stripeCheckoutSessionId  String?     @unique @db.VarChar(255)
+  stripePaymentIntentId    String?     @db.VarChar(255)
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  items                    OrderItem[]
+}
+
+model OrderItem {
+  id              String   @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId         String   @db.Uuid
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String?  @db.Uuid
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName     String   @db.VarChar(255)
+  unitPriceCents  Int
+  quantity        Int
+}
+
+// -----------------------------------------------------------------------------
+// Boekingen
+// -----------------------------------------------------------------------------
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+model Booking {
+  id              String        @id @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceId       String?       @db.Uuid
+  service         Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceName     String        @db.VarChar(255)
+  customerName    String        @db.VarChar(255)
+  customerEmail   String        @db.VarChar(255)
+  customerPhone   String?       @db.VarChar(50)
+  // Null = gastboeking (geen account aangemaakt/ingelogd bij het boeken).
+  customerId      String?       @db.Uuid
+  customer        Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  notes           String?       @db.VarChar(1000)
+  startsAt        DateTime
+  endsAt          DateTime
+  status          BookingStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+
+  // Let op: de exclusion constraint die dubbele boekingen op
+  // databaseniveau voorkomt, kan niet in Prisma's schema-taal uitgedrukt
+  // worden. Die staat als losstaande raw-SQL migratie in
+  // prisma/migrations/20260717000200_booking_no_overlap/migration.sql.
+  @@index([startsAt])
+}
+
+// -----------------------------------------------------------------------------
+// Werkuren: per weekdag instelbaar door de beheerder (/admin/kalender).
+// Altijd precies 7 rijen (gezaaid in de migratie); tijden zijn "wandklok"
+// HH:MM in SALON_TIMEZONE, net zoals de vroegere hardcoded openingsuren.
+// -----------------------------------------------------------------------------
+
+model WorkingHours {
+  // 0 = zondag ... 6 = zaterdag (zelfde conventie als Date.getDay()).
+  weekday   Int     @id
+  enabled   Boolean @default(false)
+  startTime String  @db.VarChar(5)
+  endTime   String  @db.VarChar(5)
+}
