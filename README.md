@@ -477,7 +477,12 @@ erDiagram
   Product ||--o{ OrderItem : "sold as"
   Order ||--o{ OrderItem : contains
   Product }o--o{ ProductCategory : links
-  WorkingHours || "weekday hours"
+  WorkingHours {
+    int weekday
+    boolean enabled
+    string startTime
+    string endTime
+  }
 ```
 
 - **`outOfStockAt`:** gezet wanneer `stockQuantity` op 0 komt; gewist bij restock.
