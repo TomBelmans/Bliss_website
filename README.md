@@ -117,6 +117,14 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 CALENDAR_FEED_SECRET=<lang-willekeurig-geheim>
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+
+# Saloncontact (footer + /contact)
+NEXT_PUBLIC_SALON_EMAIL=hello@jouwdomein.be
+NEXT_PUBLIC_SALON_PHONE=+32 4xx xx xx xx
+NEXT_PUBLIC_SALON_STREET=Speltstraat 28
+NEXT_PUBLIC_SALON_POSTAL_CODE=2400
+NEXT_PUBLIC_SALON_CITY=Mol
+NEXT_PUBLIC_SALON_COUNTRY=België
 ```
 
 ### 5. Lokaal starten

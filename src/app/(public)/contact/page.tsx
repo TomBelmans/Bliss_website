@@ -7,7 +7,7 @@ import { contactInfo, contactMapsEmbedUrl } from "@/lib/contact";
  * Doel: Contactgegevens, kaart en contactformulier tonen.
  *
  * Data (entiteit.attributen via DAL/mediator):
- * - (geen DB; pure UI + statische `contactInfo` / `contactMapsEmbedUrl` uit `@/lib/contact`)
+ * - (geen DB; contactgegevens via env → `@/lib/contact`)
  *
  * Acties / mutaties (via child components of API):
  * - `ContactForm`: server action `submitContactForm` (e-mailbericht)
@@ -76,7 +76,7 @@ export default function ContactPage() {
                 />
               </div>
               <p className="mt-2 text-xs text-charcoal-soft/70">
-                Speltstraat 28, 2400 Mol
+                {contactInfo.mapsQuery}
               </p>
             </div>
           </div>

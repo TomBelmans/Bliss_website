@@ -1,15 +1,24 @@
 /**
  * Gedeelde contactgegevens voor footer en contactpagina.
- * Pas deze waarden aan naar de echte gegevens van Bliss — Beauty by Norah.
+ * Bron: environment variables (zie `env.salon` / README).
  */
+import { env } from "@/lib/env";
+
+function phoneToTelHref(phone: string): string {
+  const digits = phone.replace(/[^\d+]/g, "");
+  return `tel:${digits || phone}`;
+}
+
+const salon = env.salon();
+
 export const contactInfo = {
-  email: "hello@jouwdomein.be",
-  phone: "+32 4xx xx xx xx",
-  phoneHref: "tel:+32400000000",
-  addressLines: ["Speltstraat 28", "2400 Mol, België"],
+  email: salon.email,
+  phone: salon.phone,
+  phoneHref: phoneToTelHref(salon.phone),
+  addressLines: [salon.street, `${salon.postalCode} ${salon.city}, ${salon.country}`],
   /** Volledige tekst voor Google Maps-zoekopdracht / embed. */
-  mapsQuery: "Speltstraat 28, 2400 Mol, België",
+  mapsQuery: `${salon.street}, ${salon.postalCode} ${salon.city}, ${salon.country}`,
 } as const;
 
-/** Embed-URL voor Google Maps (vervang door een echte embed-URL indien gewenst). */
+/** Embed-URL voor Google Maps. */
 export const contactMapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(contactInfo.mapsQuery)}&z=13&output=embed`;

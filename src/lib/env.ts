@@ -24,4 +24,16 @@ export const env = {
   siteUrl: () => process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   calendarFeedSecret: () =>
     required("CALENDAR_FEED_SECRET", process.env.CALENDAR_FEED_SECRET),
+  /**
+   * Publieke saloncontactgegevens (footer + /contact).
+   * Defaults houden lokale ontwikkeling werkend tot .env is ingevuld.
+   */
+  salon: () => ({
+    email: process.env.NEXT_PUBLIC_SALON_EMAIL ?? "hello@jouwdomein.be",
+    phone: process.env.NEXT_PUBLIC_SALON_PHONE ?? "+32 4xx xx xx xx",
+    street: process.env.NEXT_PUBLIC_SALON_STREET ?? "Speltstraat 28",
+    postalCode: process.env.NEXT_PUBLIC_SALON_POSTAL_CODE ?? "2400",
+    city: process.env.NEXT_PUBLIC_SALON_CITY ?? "Mol",
+    country: process.env.NEXT_PUBLIC_SALON_COUNTRY ?? "België",
+  }),
 };
